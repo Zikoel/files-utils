@@ -1,14 +1,14 @@
 package main
 
 import (
-	"crypto/md5"
-	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+
+	"github.com/zikoel/files_utils"
+	"github.com/zikoel/files_utils/utils"
 )
 
 type config struct {
@@ -18,59 +18,11 @@ type config struct {
 	generateDeleteCommands bool
 }
 
-type firmedFile struct {
-	path string
-	size int64
-	hash string
-}
+type FileFingerprint = files_utils.FileFingerprint
 
-func min(x, y int64) int64 {
-	if x < y {
-		return x
-	}
-	return y
-}
+func listPathFiles(path string, bytesForHash int64) ([]FileFingerprint, error) {
 
-func filesAreTheSame(file1, file2 firmedFile) bool {
-	if file1.hash != file2.hash {
-		return false
-	}
-
-	if file1.size != file2.size {
-		return false
-	}
-
-	return true
-}
-
-func fileHash(folderPath string, info os.FileInfo, bytesForHash int64) (string, error) {
-
-	headerSize := min(bytesForHash, info.Size())
-
-	r, err := os.Open(folderPath + "/" + info.Name())
-	if err != nil {
-		return "", err
-	}
-	defer r.Close()
-
-	header := make([]byte, headerSize)
-	n, err := io.ReadFull(r, header[:])
-	if err != nil {
-		return "", err
-	}
-
-	if int64(n) < headerSize {
-		return "", errors.New("Not all the specified bytes can be readed")
-	}
-
-	md5 := fmt.Sprintf("%x", md5.Sum(header))
-
-	return md5, nil
-}
-
-func listPathFiles(path string, bytesForHash int64) ([]firmedFile, error) {
-
-	var result = make([]firmedFile, 0)
+	var result = make([]FileFingerprint, 0)
 
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
@@ -85,15 +37,15 @@ func listPathFiles(path string, bytesForHash int64) ([]firmedFile, error) {
 			}
 			result = append(result, innerFiles...)
 		} else {
-			hash, err := fileHash(path, file, bytesForHash)
+			hash, err := utils.FileHash(path, file, bytesForHash)
 			if err != nil {
 				return nil, err
 			}
 
-			f := firmedFile{
-				path: path + "/" + file.Name(),
-				size: file.Size(),
-				hash: hash,
+			f := FileFingerprint{
+				Path: path + "/" + file.Name(),
+				Size: file.Size(),
+				Hash: hash,
 			}
 			result = append(result, f)
 		}
@@ -102,9 +54,9 @@ func listPathFiles(path string, bytesForHash int64) ([]firmedFile, error) {
 	return result, nil
 }
 
-func fileExistInList(file firmedFile, list []firmedFile) *firmedFile {
+func fileExistInList(file FileFingerprint, list []FileFingerprint) *FileFingerprint {
 	for _, lf := range list {
-		if filesAreTheSame(file, lf) {
+		if utils.FilesAreTheSame(file, lf) {
 			return &lf
 		}
 	}
@@ -164,13 +116,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	var duplicateMap = make(map[string][]firmedFile)
+	var duplicateMap = make(map[string][]FileFingerprint)
 
 	for _, file := range filesOnSource {
-		if duplicateMap[file.hash] == nil {
-			duplicateMap[file.hash] = make([]firmedFile, 0)
+		if duplicateMap[file.Hash] == nil {
+			duplicateMap[file.Hash] = make([]FileFingerprint, 0)
 		}
-		duplicateMap[file.hash] = append(duplicateMap[file.hash], file)
+		duplicateMap[file.Hash] = append(duplicateMap[file.Hash], file)
 	}
 
 	if c.verbosity == 2 {
@@ -180,7 +132,7 @@ func main() {
 		for _, duplicates := range duplicateMap {
 			if len(duplicates) > 1 {
 				duplicatedFiles += int64(len(duplicates))
-				duplicatedSize += duplicates[0].size * int64((len(duplicates) - 1))
+				duplicatedSize += duplicates[0].Size * int64((len(duplicates) - 1))
 			}
 
 		}
@@ -192,7 +144,7 @@ func main() {
 		if len(duplicates) > 1 {
 			fmt.Printf("%s:\n", hash)
 			for _, file := range duplicates {
-				fmt.Printf("\t- %s\n", file.path)
+				fmt.Printf("\t- %s\n", file.Path)
 			}
 		}
 	}

@@ -1,3 +1,3 @@
-module github.com/zikoel/find-duplicates
+module github.com/zikoel/files_utils
 
-go 1.13
+go 1.14
